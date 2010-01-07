@@ -76,7 +76,11 @@ class PerSocketData(object):
       del PerSocketData._for_fd[self._fd]
 
   def prepare(self):
-    # TODO: avoid doing this for each source (multiple times per socket)
+    # BUGBUGBUG: don't do this for each source (multiple times per socket).
+    # There is currently a race condition between the second call to prepare()
+    # for the same socket and network events on that socket, because
+    # WSAEventSelect resets the event and clears the internal network event
+    # record.
     events = 0
     for condition in self._watches.itervalues():
       events |= condition
