@@ -76,6 +76,7 @@ class PerSocketData(object):
       del PerSocketData._for_fd[self._fd]
 
   def prepare(self):
+    # TODO: avoid doing this for each source (multiple times per socket)
     events = 0
     for condition in self._watches.itervalues():
       events |= condition
