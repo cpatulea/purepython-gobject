@@ -170,7 +170,7 @@ class SocketSource(Source):
 class TimeoutSource(Source):
   def __init__(self, ms, callback, args):
     super(TimeoutSource, self).__init__(callback, args)
-    self._interval = ms / 1000.0
+    self._interval = ms * 0.001
     self._expiration = time.time() + self._interval
 
   def prepare(self):
