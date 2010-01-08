@@ -121,6 +121,17 @@ class PerSocketData(object):
         if error:
           self._revents |= IO_ERR
 
+      # FIXME: FD_WRITE is edge triggered on buffer space becoming available.
+      # Most of the time, unless send() returns WSAEWOULDBLOCK, it is implied
+      # that the socket is writable.
+      #
+      # To properly implement this, we would need to catch WSAEWOULDBLOCK from
+      # sends (monkey patch self._fd.send perhaps?) and turn off IO_OUT until
+      # the next FD_WRITE.
+      #
+      # See GIOWin32Channel::write_would_have_blocked in giowin32.c.
+      self._revents |= IO_OUT
+      
       self._enumed = True
 
     return bool(self._revents)
