@@ -75,18 +75,15 @@ class PerSocketData(object):
 
   def add_watch(self, source, condition):
     self._watches[source] = condition
+    self._select_net_events()
 
   def remove_watch(self, source):
     del self._watches[source]
     if not self._watches:
       del PerSocketData._for_fd[self._fd]
+    self._select_net_events()
 
-  def prepare(self):
-    # BUGBUGBUG: don't do this for each source (multiple times per socket).
-    # There is currently a race condition between the second call to prepare()
-    # for the same socket and network events on that socket, because
-    # WSAEventSelect resets the event and clears the internal network event
-    # record.
+  def _select_net_events(self):
     events = 0
     for condition in self._watches.itervalues():
       events |= condition
@@ -103,6 +100,7 @@ class PerSocketData(object):
     
     print "event select 0x%04x" % net_events, _net_events_str(net_events)
 
+  def prepare(self):
     self._enumed = False
     return self._event, sys.maxint # timeout
 
