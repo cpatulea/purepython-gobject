@@ -24,9 +24,9 @@ import socket
 import time
 
 class WSANETWORKEVENTS(Structure): 
-     _fields_ = [('lNetworkEvents', c_long), 
-                 ('iErrorCode', c_int * 10) # 10 = FD_MAX_EVENTS 
-                ]
+  _fields_ = [('lNetworkEvents', c_long), 
+              ('iErrorCode', c_int * 10) # 10 = FD_MAX_EVENTS 
+             ]
 
 SOCKET_ERROR = -1
 
@@ -353,7 +353,7 @@ if __name__ == "__main__":
 
   #source_remove(sid1)
   #source_remove(sid2)
-  
+
   #print MainContext().default()._sources
 
   print MainContext().default()._sources

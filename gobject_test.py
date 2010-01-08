@@ -17,12 +17,12 @@ class TestSocketSource(unittest.TestCase):
   def setUp(self):
     self._sock1, self._sock2 = two_new_sockets()
     PerSocketData._test_reset()
-  
+
   def testOneWatchOneFd(self):
     sid = 1234
     s = SocketSource(self._sock1, IO_IN, nop, [])
     self.assertEqual(1, len(PerSocketData.for_socket(self._sock1)._watches))
-    
+
     s.preremove()
     self.assertEqual(0, len(PerSocketData._for_fd))
 
@@ -36,14 +36,14 @@ class TestSocketSource(unittest.TestCase):
     s2 = SocketSource(self._sock1, IO_OUT, nop, [])
     self.assertEqual(2, len(PerSocketData.for_socket(self._sock1)._watches))
     self.assertEqual(1, len(PerSocketData._for_fd))
-    
+
     event1, _ = s1.prepare()
     event2, _ = s2.prepare()
     self.assertEqual(event1, event2)
-    
+
     s1.preremove()
     s2.preremove()
-    
+
   def testTwoWatchesTwoFds(self):
     sid1 = 1234
     s1 = SocketSource(self._sock1, IO_OUT, nop, [])
@@ -54,7 +54,7 @@ class TestSocketSource(unittest.TestCase):
     s2 = SocketSource(self._sock2, IO_OUT, nop, [])
     self.assertEqual(1, len(PerSocketData.for_socket(self._sock2)._watches))
     self.assertEqual(2, len(PerSocketData._for_fd))
-    
+
     event1, _ = s1.prepare()
     event2, _ = s2.prepare()
     self.assertNotEqual(event1, event2)
@@ -67,7 +67,7 @@ class TestMainContext(unittest.TestCase):
     self._sock1, self._sock2 = two_new_sockets()
     self._ctx = MainContext.default()
     PerSocketData._test_reset()
-  
+
   def testOneWatchOneFd(self):
     sid = io_add_watch(self._sock1, IO_IN, nop)
     events, _ = self._ctx.query()
@@ -89,13 +89,13 @@ class TestMainContext(unittest.TestCase):
     self.assertEqual(1, len(events))
     source_remove(sid1)
     source_remove(sid2)
-  
+
 class TestGobject(unittest.TestCase):
   def setUp(self):
     self._sock1, self._sock2 = two_new_sockets()
     self._ctx = MainContext.default()
     PerSocketData._test_reset()
-  
+
   def testOneIoAddWatch(self):
     sid = io_add_watch(self._sock1, IO_IN, nop)
     self.assert_(self._ctx._sources[sid])
@@ -125,6 +125,7 @@ class TestGobject(unittest.TestCase):
     self.assertEqual(1, len(self._ctx._sources))
     self.assert_(self._ctx._sources[sid])
     source_remove(sid)
+
 
 if __name__ == "__main__":
   unittest.main()
