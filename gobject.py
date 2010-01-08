@@ -10,18 +10,24 @@ Heavily inspired from glib (glib/gmain.c, glib/gwin32.c).
 TODO:
  - report errors using GError
  - source priorities
+ - IO_IN should always be delivered before (or with) IO_HUP (depends on source
+   priorities)
 """
 from ctypes import *
 from win32file import WSAEventSelect, FD_READ, FD_WRITE, FD_CLOSE, FD_ACCEPT, FD_CONNECT
 from win32event import CreateEvent, SetEvent, WaitForMultipleObjects, QS_ALLINPUT, WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED, INFINITE
 from win32gui import PeekMessage, TranslateMessage, DispatchMessage
 from win32con import MWMO_ALERTABLE
-from win32api import SetConsoleCtrlHandler
+from win32api import SetConsoleCtrlHandler, Sleep
 import pywintypes
 import logging
 import sys
 import socket
 import time
+
+def _net_events_str(net_events):
+  flags = ["FD_READ", "FD_WRITE", "FD_CLOSE", "FD_ACCEPT", "FD_CONNECT"]
+  return "|".join(f for f in flags if net_events & globals()[f])
 
 class WSANETWORKEVENTS(Structure): 
   _fields_ = [('lNetworkEvents', c_long), 
@@ -94,6 +100,8 @@ class PerSocketData(object):
       net_events |= FD_CLOSE
 
     WSAEventSelect(self._fd, self._event, net_events)
+    
+    print "event select 0x%04x" % net_events, _net_events_str(net_events)
 
     self._enumed = False
     return self._event, sys.maxint # timeout
@@ -101,6 +109,9 @@ class PerSocketData(object):
   def check(self):
     if not self._enumed: # enumerate only once per socket
       net_events = WSAEnumNetworkEvents(self._fd, self._event)
+      
+      print "enum events 0x%04x" % net_events.lNetworkEvents, \
+            _net_events_str(net_events.lNetworkEvents)
 
       self._revents = 0
       if net_events.lNetworkEvents & (FD_READ | FD_ACCEPT):
@@ -232,6 +243,10 @@ class MainContext(object):
       MainContext._default = MainContext()
     return MainContext._default
 
+  @staticmethod
+  def _test_reset():
+    MainContext._default = None
+
   def __init__(self):
     self._next_id = 0
     self._sources = {}
@@ -290,11 +305,15 @@ class MainLoop(object):
 
     print "waiting on %d events, timeout %d" % (len(events), timeout)
 
-    rc = WaitForMultipleObjects(events, False, timeout)
-    if rc == WAIT_FAILED:
-      raise pywintypes.error(GetLastError(), "WaitForMultipleObjects")
-    else: # WAIT_TIMEOUT or WAIT_OBJECT_0+i
-      self._context.check_and_dispatch()
+    if events:
+      rc = WaitForMultipleObjects(events, False, timeout)
+      if rc == WAIT_FAILED:
+        raise pywintypes.error(GetLastError(), "WaitForMultipleObjects")
+      # else: # WAIT_TIMEOUT or WAIT_OBJECT_0+i
+    else:
+      Sleep(timeout)
+
+    self._context.check_and_dispatch()
 
 def io_add_watch(sock, condition, callback, *args):
   source = SocketSource(sock, condition, callback, args)

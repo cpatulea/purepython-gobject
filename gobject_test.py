@@ -15,8 +15,9 @@ def nop(*args, **kwargs):
 
 class TestSocketSource(unittest.TestCase):
   def setUp(self):
-    self._sock1, self._sock2 = two_new_sockets()
     PerSocketData._test_reset()
+    MainContext._test_reset()
+    self._sock1, self._sock2 = two_new_sockets()
 
   def testOneWatchOneFd(self):
     sid = 1234
@@ -64,9 +65,10 @@ class TestSocketSource(unittest.TestCase):
 
 class TestMainContext(unittest.TestCase):
   def setUp(self):
+    PerSocketData._test_reset()
+    MainContext._test_reset()
     self._sock1, self._sock2 = two_new_sockets()
     self._ctx = MainContext.default()
-    PerSocketData._test_reset()
 
   def testOneWatchOneFd(self):
     sid = io_add_watch(self._sock1, IO_IN, nop)
@@ -92,9 +94,12 @@ class TestMainContext(unittest.TestCase):
 
 class TestGobject(unittest.TestCase):
   def setUp(self):
+    PerSocketData._test_reset()
+    MainContext._test_reset()
     self._sock1, self._sock2 = two_new_sockets()
     self._ctx = MainContext.default()
-    PerSocketData._test_reset()
+    
+    self._ml = MainLoop()
 
   def testOneIoAddWatch(self):
     sid = io_add_watch(self._sock1, IO_IN, nop)
@@ -126,6 +131,96 @@ class TestGobject(unittest.TestCase):
     self.assert_(self._ctx._sources[sid])
     source_remove(sid)
 
+  def testSocketAcceptIoIn(self):
+    self._sock1.bind(("", 0))
+    self._sock1.listen(1)
+    _, port = self._sock1.getsockname()
+    
+    called = []
+    def callback():
+      called.append(True)
+    sid = io_add_watch(self._sock1, IO_IN, callback)
+    
+    self._sock2.connect(("localhost", port))
+
+    timeout_add(500, self._ml.quit)
+    self._ml.run()
+    
+    self.assertEqual(1, len(called))
+
+  def testSocketAcceptIoOut(self):
+    self._sock1.bind(("", 0))
+    self._sock1.listen(1)
+    _, port = self._sock1.getsockname()
+    
+    called = []
+    def callback():
+      called.append(True)
+    sid = io_add_watch(self._sock1, IO_OUT, callback)
+    
+    self._sock2.connect(("localhost", port))
+
+    timeout_add(500, self._ml.quit)
+    self._ml.run()
+    
+    self.assertEqual(0, len(called))
+
+  def testTwoWatchesOneFd(self):
+    """Multiple watches on the same socket should coexist."""
+    self._sock1.bind(("", 0))
+    self._sock1.listen(1)
+    _, port = self._sock1.getsockname()
+    
+    self._sock2.connect(("localhost", port))
+    
+    sock1c, _ = self._sock1.accept()
+    
+    called_read = []
+    def handle_read():
+      called_read.append(True)
+      sock1c.recv(4096)
+      return True
+    sid1 = io_add_watch(sock1c, IO_IN, handle_read)
+    
+    called_hup = []
+    sid2 = 0
+    def handle_hup():
+      called_hup.append(True)
+      return True
+    sid2 = io_add_watch(sock1c, IO_HUP, handle_hup)
+    
+    self._sock2.send("a" * 1000)
+    self._sock2.close()
+    
+    timeout_add(500, self._ml.quit)
+    self._ml.run()
+    
+    self.assertEqual(1, len(called_read))
+    self.assertEqual(1, len(called_hup))
+
+  def testLazyRecv(self):
+    """IO_IN handler should be called repeatedly for incomplete recv()'s."""
+    self._sock1.bind(("", 0))
+    self._sock1.listen(1)
+    _, port = self._sock1.getsockname()
+    
+    self._sock2.connect(("localhost", port))
+    
+    sock1c, _ = self._sock1.accept()
+    
+    called_read = []
+    def handle_read():
+      called_read.append(True)
+      sock1c.recv(10)
+      return True
+    sid = io_add_watch(sock1c, IO_IN, handle_read)
+    
+    self._sock2.send("a" * 36)
+    
+    timeout_add(500, self._ml.quit)
+    self._ml.run()
+    
+    self.assertEqual(4, len(called_read))
 
 if __name__ == "__main__":
   unittest.main()
