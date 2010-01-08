@@ -97,8 +97,6 @@ class PerSocketData(object):
       net_events |= FD_CLOSE
 
     WSAEventSelect(self._fd, self._event, net_events)
-    
-    print "event select 0x%04x" % net_events, _net_events_str(net_events)
 
   def prepare(self):
     self._enumed = False
@@ -108,9 +106,6 @@ class PerSocketData(object):
     if not self._enumed: # enumerate only once per socket
       net_events = WSAEnumNetworkEvents(self._fd, self._event)
       
-      print "enum events 0x%04x" % net_events.lNetworkEvents, \
-            _net_events_str(net_events.lNetworkEvents)
-
       self._revents = 0
       if net_events.lNetworkEvents & (FD_READ | FD_ACCEPT):
         self._revents |= IO_IN
@@ -300,8 +295,6 @@ class MainLoop(object):
     events = list(events)
     if timeout == sys.maxint:
       timeout = INFINITE
-
-    print "waiting on %d events, timeout %d" % (len(events), timeout)
 
     if events:
       rc = WaitForMultipleObjects(events, False, timeout)
