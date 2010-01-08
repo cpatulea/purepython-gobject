@@ -73,6 +73,9 @@ class PerSocketData(object):
     self._event = CreateEvent(None, False, False, None)
     self._watches = {}
 
+  def fd(self):
+    return self._fd
+
   def add_watch(self, source, condition):
     self._watches[source] = condition
     self._select_net_events()
@@ -122,7 +125,7 @@ class PerSocketData(object):
 
     return bool(self._revents)
 
-  def needs_dispatch(self, source):
+  def dispatch_condition(self, source):
     if not self._enumed:
       raise ValueError("Must call check() first")
 
@@ -167,8 +170,10 @@ class SocketSource(Source):
     return self._socket_data.check()
 
   def dispatch(self):
-    if self._socket_data.needs_dispatch(self):
-      return super(SocketSource, self).dispatch()
+    condition = self._socket_data.dispatch_condition(self)
+    if condition:
+      cb = self._callback
+      return cb(self._socket_data.fd(), condition, *self._args)
     else:
       return True
 
@@ -270,9 +275,13 @@ class MainContext(object):
 
   def check_and_dispatch(self):
     for sid, source in self._sources.items():
+      # sources removed from within the loop by dispatch
+      if sid not in self._sources:
+        continue
+
       if source.check():
         need_destroy = not source.dispatch()
-        if need_destroy:
+        if sid in self._sources and need_destroy:
           self.detach(sid)
 
 class MainLoop(object):

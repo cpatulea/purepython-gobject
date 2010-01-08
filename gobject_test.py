@@ -70,6 +70,8 @@ class TestMainContext(unittest.TestCase):
     self._sock1, self._sock2 = two_new_sockets()
     self._ctx = MainContext.default()
 
+    self._ml = MainLoop()
+
   def testOneWatchOneFd(self):
     sid = io_add_watch(self._sock1, IO_IN, nop)
     events, _ = self._ctx.query()
@@ -91,6 +93,25 @@ class TestMainContext(unittest.TestCase):
     self.assertEqual(1, len(events))
     source_remove(sid1)
     source_remove(sid2)
+
+  def testRemoveInDispatch(self):
+    self._sock1.bind(("", 0))
+    self._sock1.listen(1)
+    _, port = self._sock1.getsockname()
+    
+    called = []
+    def callback(fd, condition):
+      called.append(True)
+      source_remove(sid)
+    sid = io_add_watch(self._sock1, IO_IN, callback)
+    
+    self._sock2.connect(("localhost", port))
+
+    timeout_add(500, self._ml.quit)
+    self._ml.run()
+    
+    self.assertRaises(KeyError, source_remove, sid)
+    
 
 class TestGobject(unittest.TestCase):
   def setUp(self):
@@ -137,7 +158,7 @@ class TestGobject(unittest.TestCase):
     _, port = self._sock1.getsockname()
     
     called = []
-    def callback():
+    def callback(fd, condition):
       called.append(True)
     sid = io_add_watch(self._sock1, IO_IN, callback)
     
@@ -154,7 +175,7 @@ class TestGobject(unittest.TestCase):
     _, port = self._sock1.getsockname()
     
     called = []
-    def callback():
+    def callback(fd, condition):
       called.append(True)
     sid = io_add_watch(self._sock1, IO_OUT, callback)
     
@@ -176,7 +197,7 @@ class TestGobject(unittest.TestCase):
     sock1c, _ = self._sock1.accept()
     
     called_read = []
-    def handle_read():
+    def handle_read(fd, condition):
       called_read.append(True)
       sock1c.recv(4096)
       return True
@@ -184,7 +205,7 @@ class TestGobject(unittest.TestCase):
     
     called_hup = []
     sid2 = 0
-    def handle_hup():
+    def handle_hup(fd, condition):
       called_hup.append(True)
       return True
     sid2 = io_add_watch(sock1c, IO_HUP, handle_hup)
@@ -209,7 +230,7 @@ class TestGobject(unittest.TestCase):
     sock1c, _ = self._sock1.accept()
     
     called_read = []
-    def handle_read():
+    def handle_read(fd, condition):
       called_read.append(True)
       sock1c.recv(10)
       return True
