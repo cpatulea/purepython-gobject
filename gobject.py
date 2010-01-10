@@ -49,6 +49,12 @@ IO_OUT = 4
 IO_ERR = 8
 IO_HUP = 16
 
+PRIORITY_HIGH = -100
+PRIORITY_DEFAULT = 0
+PRIORITY_HIGH_IDLE = 100
+PRIORITY_DEFAULT_IDLE = 200
+PRIORITY_LOW = 300
+
 def _io_condition_str(condition):
   flags = ["IO_IN", "IO_OUT", "IO_ERR", "IO_HUP"]
   return "|".join(f for f in flags if condition & globals()[f])
@@ -331,7 +337,8 @@ def io_add_watch(sock, condition, callback, *args):
   sid = MainContext.default().attach(source)
   return sid
 
-def idle_add(callback, *args):
+def idle_add(callback, *args, **kwargs):
+  # TODO: handle kwargs["priority"]
   source = IdleSource(callback, args)
   sid = MainContext.default().attach(source)
   return sid
