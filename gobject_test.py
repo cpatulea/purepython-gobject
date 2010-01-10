@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import unittest
 import socket
+import errno
 
 from gobject import *
 
@@ -243,5 +244,65 @@ class TestGobject(unittest.TestCase):
     
     self.assertEqual(4, len(called_read))
 
+  def testLazySend(self):
+    """IO_OUT handler should be called repeatedly for small send()'s."""
+    self._sock1.bind(("", 0))
+    self._sock1.listen(1)
+    _, port = self._sock1.getsockname()
+    
+    self._sock2.connect(("localhost", port))
+    
+    sock1c, _ = self._sock1.accept()
+    
+    send_buffer = ["a" * 10] * 6 + ["a" * 5]
+    
+    called_out = []
+    def handle_out(fd, condition):
+      called_out.append(True)
+      buffer = send_buffer.pop(0)
+      sock1c.send(buffer)
+      return bool(send_buffer)
+      
+    sid = io_add_watch(sock1c, IO_OUT, handle_out)
+    
+    timeout_add(500, self._ml.quit)
+    self._ml.run()
+    
+    self.assertEqual(7, len(called_out))
+
+  def testSendOverrun(self):
+    """IO_OUT should eventually stop (when send raises EWOULDBLOCK)."""
+    self._sock1.bind(("", 0))
+    self._sock1.listen(1)
+    _, port = self._sock1.getsockname()
+    
+    self._sock2.connect(("localhost", port))
+    
+    sock1c, _ = self._sock1.accept()
+    
+    # try to reduce the amount of time/memory it takes us to get there
+    sock1c.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 10)
+    self._sock2.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 10)
+    
+    called_out = []
+    MAX_SENDS = 100
+    def handle_out(fd, condition):
+      called_out.append(True)
+      
+      try:
+        sock1c.send("a" * 3000)
+      except socket.error, e:
+        self.assertEquals(errno.EWOULDBLOCK, e[0])
+
+      self.assert_(len(called_out) < MAX_SENDS)
+      return True
+      
+    sid = io_add_watch(sock1c, IO_OUT, handle_out)
+    
+    timeout_add(500, self._ml.quit)
+    self._ml.run()
+    
+    self.assert_(len(called_out) < MAX_SENDS)
+    
 if __name__ == "__main__":
   unittest.main()

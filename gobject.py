@@ -23,6 +23,7 @@ import pywintypes
 import logging
 import sys
 import socket
+import errno
 import time
 
 def _net_events_str(net_events):
@@ -66,7 +67,7 @@ class PerSocketData(object):
   def for_socket(sock):
     fd = sock.fileno()
     if fd not in PerSocketData._for_fd:
-      PerSocketData._for_fd[fd] = PerSocketData(fd)
+      PerSocketData._for_fd[fd] = PerSocketData(sock)
 
     return PerSocketData._for_fd[fd]
 
@@ -74,10 +75,28 @@ class PerSocketData(object):
   def _test_reset():
     PerSocketData._for_fd = {}
 
-  def __init__(self, fd):
-    self._fd = fd
+  def __init__(self, sock):
+    self._fd = sock.fileno()
     self._event = CreateEvent(None, False, False, None)
     self._watches = {}
+
+    # don't create virtual FD_WRITEs until the first real FD_WRITE
+    self._send_would_have_blocked = True
+    self._old_send = sock.send
+    sock.send = self._new_send
+
+  def _new_send(self, data, flags=0):
+    old_send = self._old_send
+    try:
+      rc = old_send(data, flags)
+      # trigger virtual FD_WRITE
+      self._send_would_have_blocked = False
+      SetEvent(self._event)
+      return rc
+    except socket.error, e:
+      if e[0] == errno.EWOULDBLOCK:
+        self._send_would_have_blocked = True
+      raise
 
   def fd(self):
     return self._fd
@@ -85,6 +104,10 @@ class PerSocketData(object):
   def add_watch(self, source, condition):
     self._watches[source] = condition
     self._select_net_events()
+
+    # satisfy IO_OUT immediately
+    if not self._send_would_have_blocked:
+      SetEvent(self._event)
 
   def remove_watch(self, source):
     del self._watches[source]
@@ -126,17 +149,12 @@ class PerSocketData(object):
       for error in net_events.iErrorCode:
         if error:
           self._revents |= IO_ERR
+      
+      if net_events.lNetworkEvents & FD_WRITE:
+        self._send_would_have_blocked = False
 
-      # FIXME: FD_WRITE is edge triggered on buffer space becoming available.
-      # Most of the time, unless send() returns WSAEWOULDBLOCK, it is implied
-      # that the socket is writable.
-      #
-      # To properly implement this, we would need to catch WSAEWOULDBLOCK from
-      # sends (monkey patch self._fd.send perhaps?) and turn off IO_OUT until
-      # the next FD_WRITE.
-      #
-      # See GIOWin32Channel::write_would_have_blocked in giowin32.c.
-      self._revents |= IO_OUT
+      if not self._send_would_have_blocked:
+        self._revents |= IO_OUT
       
       self._enumed = True
 
